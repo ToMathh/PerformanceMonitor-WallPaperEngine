@@ -76,13 +76,23 @@ class HeadlessServer:
 
     def __init__(self):
         self.cfg = load_cfg()
-        # Set default refresh mode to "low" for minimal app if not set
+        # Set default refresh mode to "realtime" (1s) for minimal app if not set
+        # Low mode (3s) is opt-in via checkbox
         if "refresh_mode" not in self.cfg:
-            self.cfg["refresh_mode"] = "low"
+            self.cfg["refresh_mode"] = "realtime"
         self.collector = DataCollector(self.cfg)
         self._alive = True
+        # Enable startup at boot by default if not already set
+        if not is_startup_entry(_STARTUP_NAME):
+            exe_path = sys.executable
+            if getattr(sys, 'frozen', False):
+                exe_path = sys.executable
+            else:
+                exe_path = os.path.join(_ROOT, "UltraLowPerf", "main.py")
+                exe_path = f'"{sys.executable}" "{exe_path}"'
+            set_startup_entry(_STARTUP_NAME, exe_path, True)
         self._startup_enabled = is_startup_entry(_STARTUP_NAME)
-        self._low_mode = (self.cfg.get("refresh_mode", "low") == "low")
+        self._low_mode = (self.cfg.get("refresh_mode", "realtime") == "low")
 
     def start(self):
         self.collector.start()
@@ -106,9 +116,9 @@ class HeadlessServer:
             icon.update_menu()
 
     def toggle_low_mode(self, icon=None):
-        """Toggle low refresh mode (3s vs normal 2s)."""
+        """Toggle low refresh mode (3s vs realtime 1s)."""
         self._low_mode = not self._low_mode
-        self.cfg["refresh_mode"] = "low" if self._low_mode else "normal"
+        self.cfg["refresh_mode"] = "low" if self._low_mode else "realtime"
         save_cfg(self.cfg)
         self.collector.update_cfg(self.cfg)
         if icon is not None:
