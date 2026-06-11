@@ -1,4 +1,4 @@
-# 🐱 StrangeCat Monitor - Minimal (Server) v6.0
+# 🐱 StrangeCat Monitor - Minimal v6.0
 
 A lightweight, headless version of StrangeCat Monitor that runs as a system tray icon and provides system performance data via HTTP. Perfect for remote monitoring, Wallpaper Engine integration, or background operation without a GUI.
 
@@ -21,7 +21,7 @@ A lightweight, headless version of StrangeCat Monitor that runs as a system tray
 Download the latest release and launch:
 
 ```txt
-StrangeCat Monitor Server.exe
+StrangeCat.Monitor.Minimal.RECOMMANDED.exe
 ```
 
 No Python or additional setup required.
