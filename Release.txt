@@ -1,0 +1,318 @@
+╔══════════════════════════════════════════════════════════╗
+║         STRANGECAT MONITOR  v3.2  —  README              ║
+╚══════════════════════════════════════════════════════════╝
+
+CONTENU DU PACKAGE
+──────────────────
+  strangecat_monitor.py   ← Application principale
+  make_icon.py            ← Générateur d'icône (lancer 1 fois)
+  build.bat               ← Build EXE Windows (PyInstaller)
+  README.txt              ← Ce fichier
+
+INSTALLATION RAPIDE
+───────────────────
+  1. pip install psutil pillow pystray pywin32 wmi
+  2. python make_icon.py          (génère icon.ico)
+  3. python strangecat_monitor.py (lancer l'app)
+
+  — OU pour créer un EXE standalone :
+  4. double-cliquer build.bat
+  5. récupérer dist\StrangeCat Monitor.exe
+
+CORRECTIONS v2.2
+─────────────────
+  ✓ CoreTemp  — crash résolu (lecture mémoire partagée sécurisée
+                avec string_at + finally pour libérer les handles)
+  ✓ Settings  — Save fonctionne, config.json écrit dans
+                %APPDATA%\StrangeCat\config.json
+                Port invalide → remis à la valeur précédente
+  ✓ Resize    — 8 directions (N/S/E/W + 4 coins) depuis n'importe
+                quel bord; barres recalculées après redimensionnement
+  ✓ Compact   — bouton ⊟/⊞ dans la titlebar, live sans Settings
+
+NOUVEAUTÉS v3.1
+───────────────
+  ✓ Interface  — Rendu professionnel amélioré :
+                • Footer agrandi (32px hauteur, police 9px)
+                • Header avec boutons plus grands (38px hauteur, police 12px)
+                • Palette de couleurs améliorée (plus de contraste)
+                • Padding et espacement général augmenté
+                • Largeur par défaut augmentée (340→380px)
+                • Graphiques avec lignes plus épaisses et points plus grands
+
+  ✓ Mode Graph — Grille responsive horizontale :
+                • Disposition en grille (1-3 colonnes selon largeur)
+                • Chaque métrique collapsible (bouton ▼/▶)
+                • Canvas avec scrollbar pour le défilement
+                • Resize vertical et horizontal fonctionnel
+                • La grille s'ajuste automatiquement au resize
+
+  ✓ Mode Compact — Resize horizontal uniquement :
+                • Plus de resize vertical (hauteur fixe auto)
+                • Hauteur s'adapte automatiquement au contenu
+                • Bug visuel corrigé lors du relâchement
+
+  ✓ Performance — Optimisation pour fond :
+                • Cache GPU (2s TTL) réduit les appels nvidia-smi
+                • Mode Low Power (activé par défaut)
+                • Refresh rate par défaut augmenté (1→2s)
+                • Refresh ralenti par 3 quand fenêtre cachée
+                • Pas de dessin si fenêtre cachée
+
+  ✓ Settings  — Nouvelle option "Low Power Mode" dans DISPLAY
+
+NOUVEAUTÉS v3.2
+───────────────
+  ✓ Multilingue — Support français et anglais :
+                • Option "Language" dans les paramètres (fr/en)
+                • Traduction de toute l'interface
+                • Changement de langue en temps réel
+
+  ✓ Fermeture — Dialogue de confirmation amélioré :
+                • Choix entre "Minimiser" et "Quitter"
+                • Case à cocher "Se souvenir de mon choix"
+                • Action par défaut configurable (ask/hide/quit)
+
+  ✓ Notification — Fenêtre de notification au démarrage :
+                • Affichée si l'app démarre minimisée
+                • Indique "Minimisé dans le tray"
+                • Se ferme automatiquement après 3 secondes
+
+  ✓ Graphiques — Correction des coupures :
+                • Utilisation de la hauteur réelle du canvas
+                • Padding ajouté pour éviter les coupures
+                • Affichage du port corrigé (plus caché)
+
+NOUVEAUTÉS v3.3
+───────────────
+  ✓ Graphiques — Collapse amélioré :
+                • Graphiques repliés restent visibles mais plus petits
+                • Spacer de 20px pour hauteur minimale
+                • Weight=0.3 pour les lignes repliées
+                • Permet aux autres graphiques d'avoir plus d'espace
+
+  ✓ Langue — Toggle rapide dans le header :
+                • Bouton avec drapeau (🇫🇷/🇬🇧) dans la barre de titre
+                • Menu déroulant au clic pour changer de langue
+                • Positionné à côté des boutons ⊟ ⚙ — ✕
+                • Changement de langue en temps réel
+
+  ✓ Fermeture — Action par défaut configurable :
+                • Option "Action fermeture par défaut" dans DISPLAY
+                • Choix entre "minimize" et "quit"
+                • Utilisé quand "Se souvenir de mon choix" non coché
+                • Permet de définir le comportement par défaut du X
+
+  ✓ Interface — Correction couleur texte :
+                • En-têtes de section en blanc (C["fg_hi"])
+                • Plus de texte rouge dans les paramètres
+                • Meilleure lisibilité
+
+  ✓ Instance unique — Prévention des multiples instances :
+                • Vérification au démarrage via socket (port 51999)
+                • Message "StrangeCat Monitor is already running"
+                • Empêche lancement de plusieurs instances
+                • Évite accumulation dans le gestionnaire de tâches
+
+  ✓ Fermeture forcée — Terminaison complète :
+                • Utilisation de os._exit(0) dans _do_quit()
+                • Force la fermeture de tous les processus
+                • Aucun processus ne reste en arrière-plan
+                • Garantit fermeture complète de l'application
+
+  ✓ Langue — Correction duplication :
+                • Destruction des composants avant reconstruction
+                • Plus de duplication header/footer au changement de langue
+                • Reconstruction propre de l'interface
+
+  ✓ Interface — Correction couleur dropdown :
+                • Style ttk.Combobox corrigé pour mode readonly
+                • Texte visible (non blanc sur blanc)
+                • Couleur C["fg"] appliquée correctement
+
+NOUVEAUTÉS v3.4
+───────────────
+  ✓ Header — Visibilité garantie :
+                • Hauteur minimale de fenêtre fixée à 100px
+                • Header toujours visible même si fenêtre réduite
+                • Empêche le header d'être caché en mode graph
+
+  ✓ Collapse — Comportement amélioré :
+                • Graphiques repliés restent dans la grille
+                • Conservation de la largeur (colonne)
+                • Hauteur réduite (weight=0 pour lignes collapsées)
+                • Canvas du graph non packé quand collapsé
+                • Seul le header reste visible
+                • Permet aux autres graphiques d'occuper plus d'espace
+
+  ✓ Code — Refactoring et optimisation :
+                • Docstrings ajoutées à toutes les méthodes principales
+                • Commentaires détaillés pour la logique complexe
+                • Meilleure lisibilité et maintenabilité
+                • Structure du code clarifiée
+
+NOUVEAUTÉS v3.5
+───────────────
+  ✓ Disques — Détection automatique :
+                • Détection automatique des disques (C:, D:, E:, F:, G:, etc.)
+                • Affichage de l'utilisation de chaque disque en pourcentage
+                • Intégration dans les modes Compact et Graph
+                • Graphiques d'historique pour chaque disque
+
+  ✓ Disques — Options d'affichage :
+                • Option "Afficher disques" dans les paramètres (activée par défaut)
+                • Options individuelles pour chaque disque détecté
+                • Possibilité de masquer/afficher chaque disque séparément
+                • Configuration sauvegardée dans config.json
+
+  ✓ Disques — Données collectées :
+                • Pourcentage d'utilisation
+                • Espace utilisé (GB)
+                • Espace total (GB)
+                • Espace libre (GB)
+                • Historique pour graphes sparkline
+
+  ✓ Interface — Correction bug :
+                • Correction KeyError: 'title_bar' dans les boutons de la barre de titre
+                • Utilisation correcte de C["title_bg"] au lieu de C["title_bar"]
+
+NOUVEAUTÉS v3.6
+───────────────
+  ✓ Performance — Modes de performance personnalisables :
+                • 4 modes de performance : Realtimes, Normal, Optimized, Low
+                • Realtimes : disque 10s, RAM 1s, CPU 1s, GPU 1s, VRAM 1s, Net 1s
+                • Normal (2sec) : disque 30s, RAM 2s, CPU 2s, GPU 2s, VRAM 2s, Net 2s
+                • Optimized (4sec) : disque 1min, RAM 4s, CPU 4s, GPU 4s, VRAM 4s, Net 4s
+                • Low (10sec) : disque 5min, RAM 10s, CPU 10s, GPU 10s, VRAM 10s, Net 10s
+                • Collecte intelligente des métriques selon le mode
+                • Réduction de la charge CPU et des appels système
+
+  ✓ Interface — Simplification des paramètres :
+                • Suppression du dropdown "Action fermeture par défaut"
+                • Conservation du bouton "Ask Again" pour réinitialiser
+                • Suppression de l'option "Mode économie d'énergie"
+                • Nouveau dropdown "Performance Mode" dans les paramètres
+                • Choix du mode de performance en temps réel
+
+  ✓ Optimisation — Collecte sélective :
+                • Chaque métrique collectée à son propre intervalle
+                • Réduction des appels nvidia-smi (cache GPU conservé)
+                • Réduction des appels psutil.disk_usage()
+                • Meilleure gestion des ressources système
+                • Boucle de vérification toutes les 0.5s
+                • Préservation des valeurs pour métriques non mises à jour
+
+CPU TEMP — ORDRE DE PRIORITÉ
+─────────────────────────────
+  1. psutil            (sans app tierce, Linux/certains OEM)
+  2. WMI/AcpiThermal   (sans app tierce, ACPI BIOS)
+  3. WMI/PerfData      (sans app tierce, compteurs Windows)
+  4. LibreHardwareMonitor / OpenHardwareMonitor  (app tierce)
+  5. CoreTemp           (app tierce, mémoire partagée)
+
+  → Pour avoir la temp CPU sous Windows, installer
+    LibreHardwareMonitor et le lancer en Administrateur.
+
+HTTP API
+────────
+  GET http://127.0.0.1:5100/performance  →  JSON complet
+  Champ : "cpu_temp" (null si non disponible),
+           "cpu_temp_method" (source utilisée)
+
+FONCTIONNALITÉS
+───────────────
+  ✓ Mode Compact — Affichage compact avec barres de progression
+                • Lignes label | barre | valeur unité
+                • Resize horizontal uniquement
+                • Hauteur auto-fit au contenu
+
+  ✓ Mode Graph — Affichage avec graphiques sparkline
+                • Grille responsive horizontale (1-3 colonnes)
+                • Chaque métrique collapsible (bouton ▾/▸)
+                • Graphiques avec remplissage et points colorés
+                • Mode dynamique ou échelle fixe
+                • Resize vertical et horizontal
+
+  ✓ Configuration — Paramètres accessibles via ⚙
+                • Démarrage au boot / minimisé
+                • Toujours au premier plan / Opacité
+                • Mode compact / Refresh rate
+                • Unité température (C/F)
+                • Mode économie d'énergie
+                • Langue (Français / Anglais)
+                • Métriques visibles (CPU, RAM, GPU, VRAM, NET)
+                • Serveur HTTP (port, activation)
+
+  ✓ Système Tray — Menu contextuel dans la barre système
+                • Show / Hide / Settings / Quit
+                • Icône générée dynamiquement
+
+  ✓ Performance — Optimisé pour fonctionner en fond
+                • Cache GPU (2s TTL)
+                • Mode Low Power (ralenti si caché)
+                • Refresh configurable (1/2/5 sec)
+
+  ✓ Multilingue — Support français et anglais
+                • Changement de langue en temps réel
+                • Traduction de toute l'interface
+
+  ✓ Fermeture — Dialogue de confirmation
+                • Choix Minimiser / Quitter
+                • Option "Se souvenir de mon choix"
+                • Action par défaut configurable
+
+  ✓ Notification — Notification au démarrage minimisé
+                • Affichée 500ms après le démarrage
+                • Se ferme automatiquement après 3 secondes
+
+AMÉLIORATIONS PROPOSÉES
+───────────────────────
+  📋 Interface
+    • Thèmes personnalisables (couleurs, polices)
+    • Mode sombre/clair automatique selon l'heure
+    • Transparence ajustable par glisser
+    • Position de la fenêtre mémorisée
+
+  📊 Graphiques
+    • Export des données en CSV
+    • Historique configurable (60/120/300 points)
+    • Graphiques en mode ligne/aire/barre
+    • Alertes visuelles (flash quand seuil dépassé)
+    • Graphiques multiples sur même canvas
+
+  🔔 Notifications
+    • Notifications Windows (Toast)
+    • Alertes par email sur seuils critiques
+    • Son d'alerte configurable
+    • Notifications personnalisées par métrique
+
+  🌐 Réseau
+    • Support IPv6
+    • Authentification HTTP
+    • HTTPS avec certificat
+    • WebSocket pour temps réel
+
+  💾 Données
+    • Historique persistant (base SQLite)
+    • Export des rapports (PDF, Excel)
+    • Statistiques sur le temps
+    • Comparaison de périodes
+
+  ⚙️ Configuration
+    • Profils de configuration
+    • Import/Export des settings
+    • Reset aux valeurs par défaut
+    • Configuration par ligne de commande
+
+  🎨 Personnalisation
+    • Icônes personnalisables
+    • Noms de métriques personnalisables
+    • Unités personnalisées
+    • Seuils d'alerte personnalisables
+
+  🔧 Technique
+    • Support Linux (GTK)
+    • Support macOS (Cocoa)
+    • Version portable (sans installation)
+    • Mises à jour automatiques
+

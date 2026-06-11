@@ -1,0 +1,1 @@
+"""StrangeCat Monitor UI package."""
