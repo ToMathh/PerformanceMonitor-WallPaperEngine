@@ -10,11 +10,9 @@ echo.
 
 :: This script's folder (UltraLowPerf\)
 set "HERE=%~dp0"
-:: Project root (parent of UltraLowPerf)
-set "SRC=%~dp0.."
 
 :: Safe build directory WITHOUT spaces in path
-set "BUILD_DIR=%TEMP%\StrangeCatServerBuild"
+set "BUILD_DIR=%TEMP%\StrangeCatMinimalBuild"
 
 :: Check Python
 python --version >nul 2>&1
@@ -33,12 +31,12 @@ if errorlevel 1 (
 echo [2/4] Copying to safe temp folder: %BUILD_DIR%
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 mkdir "%BUILD_DIR%"
-xcopy /e /i /y /q "%SRC%\base" "%BUILD_DIR%\base" >nul
+xcopy /e /i /y /q "%HERE%base" "%BUILD_DIR%\base" >nul
 copy /y "%HERE%main.py"      "%BUILD_DIR%\main.py"      >nul
-copy /y "%SRC%\make_icon.py" "%BUILD_DIR%\make_icon.py" >nul
+copy /y "%HERE%\make_icon_minimal.py" "%BUILD_DIR%\make_icon_minimal.py" >nul
 
 echo [3/4] Generating icon.ico...
-python "%BUILD_DIR%\make_icon.py"
+python "%BUILD_DIR%\make_icon_minimal.py"
 if not exist "%BUILD_DIR%\icon.ico" (
     echo [ERROR] icon.ico not generated.
     pause & exit /b 1
@@ -47,7 +45,7 @@ if not exist "%BUILD_DIR%\icon.ico" (
 echo [4/4] Building EXE...
 cd /d "%BUILD_DIR%"
 
-pyinstaller --onefile --windowed --name StrangeCatServer --icon icon.ico ^
+pyinstaller --onefile --windowed --name StrangeCatMinimal --icon icon.ico ^
     --distpath dist --workpath build_tmp --specpath . ^
     --paths "%BUILD_DIR%" --paths "%BUILD_DIR%\base" ^
     --hidden-import config --hidden-import collector --hidden-import metrics ^
@@ -65,18 +63,18 @@ if errorlevel 1 (
 
 :: Copy final EXE back with a friendly (spaced) name
 if not exist "%HERE%dist" mkdir "%HERE%dist"
-copy /y "%BUILD_DIR%\dist\StrangeCatServer.exe" "%HERE%dist\StrangeCat Server.exe" >nul
+copy /y "%BUILD_DIR%\dist\StrangeCatMinimal.exe" "%HERE%dist\StrangeCatMinimal.exe" >nul
 
 cd /d "%HERE%"
 
 echo.
 echo  ============================================
 echo   SUCCESS!
-echo   EXE: %HERE%dist\StrangeCat Server.exe
+echo   EXE: %HERE%dist\StrangeCatMinimal.exe
 echo  ============================================
 echo.
 
-echo Starting StrangeCat Server...
-start "" "%HERE%dist\StrangeCat Server.exe"
+echo Starting StrangeCat Minimal...
+start "" "%HERE%dist\StrangeCatMinimal.exe"
 
 timeout /t 2 >nul

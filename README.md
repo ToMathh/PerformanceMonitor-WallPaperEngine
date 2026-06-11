@@ -1,4 +1,4 @@
-# 🐱 StrangeCat Monitor - Minimal v6.0
+# 🐱 StrangeCat Monitor - Minimal (Server) v6.0
 
 A lightweight, headless version of StrangeCat Monitor that runs as a system tray icon and provides system performance data via HTTP. Perfect for remote monitoring, Wallpaper Engine integration, or background operation without a GUI.
 
@@ -163,8 +163,8 @@ Choose your refresh mode via the tray menu:
 
 | Mode      | CPU/RAM/GPU/VRAM/Network | Disks   |
 | --------- | ------------------------ | ------- |
-| Realtime  | 1 second                 | 60s     |
-| Low       | 3 seconds                | 60s     |
+| Realtime  | 1 second (default)       | 60s     |
+| Low       | 3 seconds                 | 60s     |
 
 **Slow drives** automatically back off to 5-minute polling to prevent system slowdowns.
 
@@ -182,7 +182,7 @@ Settings are stored in:
 
 ```json
 {
-  "refresh_mode": "low",
+  "refresh_mode": "realtime",
   "disk_interval": 60.0,
   "http_port": 5100
 }
@@ -190,7 +190,7 @@ Settings are stored in:
 
 | Setting        | Values                          | Default |
 | -------------- | ------------------------------- | ------- |
-| refresh_mode   | `"realtime"`, `"normal"`, `"low"` | `"low"` |
+| refresh_mode   | `"realtime"`, `"low"`          | `"realtime"` |
 | disk_interval  | Seconds (number)                | `60.0`  |
 | http_port      | Port number                     | `5100`  |
 
@@ -424,7 +424,7 @@ build.bat
 Output:
 
 ```txt
-dist/StrangeCat Monitor Server.exe
+dist/StrangeCat.Monitor.Minimal.RECOMMANDED.exe
 ```
 
 ---

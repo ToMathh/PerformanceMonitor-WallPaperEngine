@@ -44,18 +44,18 @@ _STARTUP_NAME = f"{APP_NAME} Server"  # registry entry name for minimal app
 
 
 def _make_tray_icon():
-    """Draw a small server/cat icon for the tray."""
+    """Draw a small server/cat icon for the tray (green theme)."""
     sz = 64
     img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([2, 2, sz - 3, sz - 3], radius=10,
-                        fill=(12, 12, 12, 255), outline=(0, 160, 90, 255), width=2)
+                        fill=(12, 12, 12, 255), outline=(0, 180, 80, 255), width=2)
     for ex in (14, sz - 14):
-        d.polygon([(ex - 9, 30), (ex, 8), (ex + 9, 30)], fill=(0, 150, 80, 255))
+        d.polygon([(ex - 9, 30), (ex, 8), (ex + 9, 30)], fill=(0, 200, 100, 255))
     d.ellipse([10, 28, sz - 10, sz - 6], fill=(22, 22, 22, 255),
-              outline=(0, 150, 80, 180), width=1)
+              outline=(0, 180, 80, 180), width=1)
     for ex in (22, sz - 22):
-        d.ellipse([ex - 5, 34, ex + 5, 44], fill=(0, 200, 110, 255))
+        d.ellipse([ex - 5, 34, ex + 5, 44], fill=(0, 220, 120, 255))
     return img
 
 
@@ -80,6 +80,9 @@ class HeadlessServer:
         # Low mode (3s) is opt-in via checkbox
         if "refresh_mode" not in self.cfg:
             self.cfg["refresh_mode"] = "realtime"
+        # Force network unit to KB/s for minimal app (override any existing value)
+        self.cfg["net_unit"] = "kb"
+        save_cfg(self.cfg)
         self.collector = DataCollector(self.cfg)
         self._alive = True
         # Enable startup at boot by default if not already set
