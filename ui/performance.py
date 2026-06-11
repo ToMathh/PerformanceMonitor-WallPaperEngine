@@ -348,11 +348,82 @@ class NetworkView(PerformanceView):
         b["upload"].set(f"{data.get('upload_speed', 0):.2f} MB/s")
 
 
+class GeneralView(tk.Frame):
+    """Summary view: min / max / avg for every tracked metric, no graphs."""
+
+    # Human-readable labels for each stat key
+    _LABELS = {
+        "cpu":       ("CPU",         "%"),
+        "ram":       ("RAM",         "%"),
+        "gpu":       ("GPU",         "%"),
+        "gpu_temp":  ("GPU Temp",    "°"),
+        "vram":      ("VRAM",        "%"),
+        "net_dn":    ("Réseau ↓",    "MB/s"),
+        "net_up":    ("Réseau ↑",    "MB/s"),
+        "cpu_temp":  ("CPU Temp",    "°"),
+        "cpu_fan":   ("CPU Fan",     "RPM"),
+        "case_fans": ("Case Fans",   "RPM"),
+    }
+
+    def __init__(self, parent, metric_meta, **kwargs):
+        super().__init__(parent, bg=C["panel_bg"], **kwargs)
+        self.pack(fill="both", expand=True)
+        self._rows = {}
+        self._build()
+
+    def _build(self):
+        header = tk.Frame(self, bg=C["panel_bg"])
+        header.pack(fill="x", padx=20, pady=(16, 4))
+        tk.Label(header, text="GÉNÉRAL", font=("Segoe UI", 18, "bold"),
+                 bg=C["panel_bg"], fg=C["fg_hi"]).pack(side="left")
+        tk.Label(header, text="min / max / avg par session",
+                 font=("Segoe UI", 9), bg=C["panel_bg"],
+                 fg=C["fg_dark"]).pack(side="left", padx=(12, 0), pady=(8, 0))
+
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x", padx=20, pady=(0, 8))
+
+        grid = tk.Frame(self, bg=C["panel_bg"])
+        grid.pack(fill="both", expand=True, padx=20, pady=4)
+
+        # Column headers
+        for col, text in enumerate(("Métrique", "Min", "Max", "Moy")):
+            tk.Label(grid, text=text, font=("Segoe UI", 8, "bold"),
+                     bg=C["panel_bg"], fg=C["fg_dark"],
+                     width=10, anchor="w").grid(row=0, column=col, padx=4, pady=(0, 6))
+
+        for i, (key, (label, unit)) in enumerate(self._LABELS.items(), start=1):
+            tk.Label(grid, text=label, font=("Segoe UI", 9),
+                     bg=C["panel_bg"], fg=C["fg"], anchor="w",
+                     width=10).grid(row=i, column=0, padx=4, pady=3, sticky="w")
+            row_vars = {}
+            for j, col in enumerate(("min", "max", "avg"), start=1):
+                var = tk.StringVar(value="—")
+                tk.Label(grid, textvariable=var, font=("Consolas", 9),
+                         bg=C["surface2"], fg=C["fg_hi"], anchor="e",
+                         width=10, relief="flat", padx=6, pady=4
+                         ).grid(row=i, column=j, padx=4, pady=3, sticky="ew")
+                row_vars[col] = var
+            row_vars["unit"] = unit
+            self._rows[key] = row_vars
+
+    def update(self, data, history):
+        stats = data.get("_stats", {})
+        for key, row in self._rows.items():
+            s = stats.get(key)
+            if s:
+                unit = row["unit"]
+                row["min"].set(f"{s['min']}{unit}")
+                row["max"].set(f"{s['max']}{unit}")
+                row["avg"].set(f"{s['avg']}{unit}")
+
+
 def create_performance_view(parent, metric_meta):
     """Factory function to create appropriate performance view."""
     key = metric_meta["key"]
-    
-    if key == "cpu":
+
+    if key == "general":
+        return GeneralView(parent, metric_meta)
+    elif key == "cpu":
         return CPUView(parent, metric_meta)
     elif key == "ram":
         return MemoryView(parent, metric_meta)

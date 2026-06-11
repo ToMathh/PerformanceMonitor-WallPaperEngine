@@ -396,6 +396,12 @@ class DataCollector:
         for key in ("cpu", "ram", "gpu", "gpu_temp", "vram", "net_dn", "net_up",
                     "cpu_temp", "cpu_fan", "case_fans"):
             self._hist[key] = collections.deque([0.0] * HIST_LEN, maxlen=HIST_LEN)
+
+        # Running stats for the General section (min / max / sum / count)
+        self._stats = {}
+        for key in ("cpu", "ram", "gpu", "gpu_temp", "vram", "net_dn", "net_up",
+                    "cpu_temp", "cpu_fan", "case_fans"):
+            self._stats[key] = dict(mn=None, mx=None, sm=0.0, cnt=0)
         
         # Initialize network
         collect_net()
@@ -510,7 +516,14 @@ class DataCollector:
             for hkey, hval in pushes:
                 if hkey in self._hist:
                     self._hist[hkey].append(float(hval))
-            # Disques: historique par drive
+                v = float(hval)
+                if hkey in self._stats and v > 0:
+                    s = self._stats[hkey]
+                    s["mn"] = v if s["mn"] is None else min(s["mn"], v)
+                    s["mx"] = v if s["mx"] is None else max(s["mx"], v)
+                    s["sm"] += v
+                    s["cnt"] += 1
+            # Disk history per drive
             for drive, ddata in self._disks.items():
                 hk = f"disk_{drive}"
                 if hk not in self._hist:
@@ -524,6 +537,16 @@ class DataCollector:
             d["_disks"] = dict(self._disks)
             d["_hist"] = {k: list(v) for k, v in self._hist.items()}
             d["uptime_app"] = time.time() - _app_start_time
+            # Computed stats: {key: {min, max, avg}}
+            stats = {}
+            for k, s in self._stats.items():
+                if s["cnt"] > 0:
+                    stats[k] = {
+                        "min": round(s["mn"], 1),
+                        "max": round(s["mx"], 1),
+                        "avg": round(s["sm"] / s["cnt"], 1),
+                    }
+            d["_stats"] = stats
         return d
     
     def http_payload(self):

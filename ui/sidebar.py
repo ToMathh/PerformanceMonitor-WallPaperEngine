@@ -35,13 +35,19 @@ class SidebarItem(tk.Frame):
         )
         self.indicator.pack(side="left", fill="y")
         
-        # Mini graph
-        self.mini_graph = MiniGraph(
-            self, metric["key"], metric["color"],
-            bg=bg
-        )
+        # Mini graph (hidden for summary/general metric)
+        if metric.get("is_summary"):
+            self.mini_graph = tk.Label(
+                self, text="≡", font=("Segoe UI", 14),
+                bg=bg, fg=metric["color"], width=4
+            )
+        else:
+            self.mini_graph = MiniGraph(
+                self, metric["key"], metric["color"],
+                bg=bg
+            )
         self.mini_graph.pack(side="left", padx=(6, 0), pady=8)
-        
+
         # Info frame
         self.info_frame = tk.Frame(self, bg=bg)
         self.info_frame.pack(side="left", fill="both", expand=True, padx=8)
@@ -63,53 +69,45 @@ class SidebarItem(tk.Frame):
             anchor="w"
         )
         self.value_label.pack(anchor="w")
-        
+
+        # Pre-built widget list used by _bind_events and update_selection
+        self._all_widgets = [self, self.mini_graph, self.info_frame,
+                             self.label, self.value_label]
+
         # Bind events
         self._bind_events()
     
     def _bind_events(self):
-        """Bind mouse events."""
+        """Bind mouse events once at construction time.
+        Handlers read self.is_selected dynamically, so no rebinding is needed.
+        """
         def on_click(e):
             self.on_select(self.metric["key"])
-        
+
         def on_enter(e):
             if not self.is_selected:
-                self.configure(bg=C["sidebar_hov"])
-                self.indicator.configure(bg=C["sidebar_hov"])
-                self.mini_graph.configure(bg=C["sidebar_hov"])
-                self.info_frame.configure(bg=C["sidebar_hov"])
-                self.label.configure(bg=C["sidebar_hov"])
-                self.value_label.configure(bg=C["sidebar_hov"])
-        
+                for w in self._all_widgets:
+                    w.configure(bg=C["sidebar_hov"])
+
         def on_leave(e):
             bg = C["sidebar_sel"] if self.is_selected else C["sidebar_bg"]
-            self.configure(bg=bg)
-            self.indicator.configure(bg=bg)
-            self.mini_graph.configure(bg=bg)
-            self.info_frame.configure(bg=bg)
-            self.label.configure(bg=bg)
-            self.value_label.configure(bg=bg)
-        
-        for widget in [self, self.mini_graph, self.info_frame, self.label, self.value_label]:
+            for w in self._all_widgets:
+                w.configure(bg=bg)
+
+        for widget in self._all_widgets:
             widget.bind("<Button-1>", on_click)
-            if not self.is_selected:
-                widget.bind("<Enter>", on_enter)
-                widget.bind("<Leave>", on_leave)
+            widget.bind("<Enter>",    on_enter)
+            widget.bind("<Leave>",    on_leave)
     
     def update_selection(self, is_selected):
-        """Update selection state."""
+        """Update selection state (no rebinding – handlers are already dynamic)."""
         self.is_selected = is_selected
         bg = C["sidebar_sel"] if is_selected else C["sidebar_bg"]
-        
-        self.configure(bg=bg)
+        for w in self._all_widgets:
+            w.configure(bg=bg)
         self.indicator.configure(bg=self.metric["color"] if is_selected else bg)
-        self.mini_graph.configure(bg=bg)
-        self.info_frame.configure(bg=bg)
         self.label.configure(bg=bg, fg=C["fg"] if is_selected else C["muted"])
         self.value_label.configure(bg=bg, fg=self.metric["color"] if is_selected else C["dim"])
-        
-        # Rebind events
-        self._bind_events()
     
     def update_value(self, value):
         """Update value display."""
@@ -119,7 +117,9 @@ class SidebarItem(tk.Frame):
             self.value_label.configure(text=value)
     
     def update_graph(self, history):
-        """Update mini graph."""
+        """Update mini graph (no-op for summary metrics)."""
+        if self.metric.get("is_summary"):
+            return
         self.mini_graph.update(history)
 
 
@@ -184,6 +184,8 @@ class Sidebar(tk.Frame):
     def update_values(self, data):
         """Update all values."""
         for metric_key, item in self.items.items():
+            if metric_key == "general":
+                continue
             value = self._extract_value(metric_key, data)
             item.update_value(value)
     

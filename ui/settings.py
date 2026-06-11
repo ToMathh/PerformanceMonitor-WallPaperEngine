@@ -15,32 +15,9 @@ from config import C, T, set_startup, is_startup
 
 
 def apply_dark_theme(root):
-    """Apply dark theme to all widgets."""
-    # Configure option database for dark theme
-    root.option_add("*TCombobox*Listbox*background", C["surface"])
-    root.option_add("*TCombobox*Listbox*foreground", C["fg"])
-    root.option_add("*TCombobox*Listbox*selectBackground", C["acc"])
-    root.option_add("*TCombobox*Listbox*selectForeground", "#ffffff")
-    root.option_add("*TCombobox*Listbox*font", "Segoe UI 9")
-    
+    """Apply dark theme to ttk scrollbars."""
     style = ttk.Style(root)
     style.theme_use("default")
-    
-    # Combobox dark theme
-    style.configure("Dark.TCombobox",
-                   fieldbackground=C["surface"],
-                   background=C["surface"],
-                   foreground=C["fg"],
-                   selectbackground=C["acc"],
-                   selectforeground="#ffffff",
-                   arrowcolor=C["fg"],
-                   bordercolor=C["border"],
-                   lightcolor=C["border"],
-                   darkcolor=C["border"])
-    
-    style.map("Dark.TCombobox",
-              selectbackground=[("focus", C["acc"])],
-              fieldbackground=[("focus", C["surface"])])
 
 
 class SettingsView:
@@ -120,10 +97,27 @@ class SettingsView:
             b.bind("<Button-1>", lambda e: toggle())
 
         def mk_combo(r, var, values, w=12):
-            cb = ttk.Combobox(r, textvariable=var, values=values,
-                              width=w, state="readonly", style="Dark.TCombobox")
-            cb.pack(side="left", padx=8, pady=4)
-            cb.bind("<<ComboboxSelected>>", lambda e: apply())
+            # tk.OptionMenu (uses tk.Menu internally) works in overrideredirect
+            # windows on Windows; ttk.Combobox (Toplevel popup) does not.
+            om = tk.OptionMenu(r, var, *values, command=lambda _: apply())
+            om.configure(
+                bg=C["surface"], fg=C["fg"],
+                activebackground=C["surface2"], activeforeground=C["fg_hi"],
+                highlightthickness=1, highlightbackground=C["border"],
+                highlightcolor=C["acc"],
+                relief="flat", bd=0,
+                font=("Segoe UI", 9),
+                width=w, cursor="hand2",
+                direction="below",
+            )
+            om["menu"].configure(
+                bg=C["surface"], fg=C["fg"],
+                activebackground=C["acc"], activeforeground="#ffffff",
+                relief="flat", bd=1,
+                activeborderwidth=0,
+                font=("Segoe UI", 9),
+            )
+            om.pack(side="left", padx=8, pady=4)
 
         def mk_scale(r, var, lo, hi, res):
             tk.Scale(r, from_=lo, to=hi, resolution=res,
@@ -287,6 +281,86 @@ class SettingsView:
                      fg=C["warn"], anchor="w").pack(anchor="w", padx=14, pady=(0, 8))
         else:
             tk.Frame(info, height=4, bg=C["surface"]).pack()
+
+        # ── OC / Undervolt ────────────────────────────────────────────
+        section("OC / UNDERVOLT  (⚠ Admin requis)")
+
+        import subprocess as _sp
+        import shutil as _sh
+
+        def _run(*args, check=False):
+            try:
+                _sp.run(args, check=check,
+                        creationflags=_sp.CREATE_NO_WINDOW,
+                        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                return True
+            except Exception:
+                return False
+
+        # CPU max processor state (%)
+        def _get_cpu_max():
+            try:
+                out = _sp.check_output(
+                    ["powercfg", "/query", "SCHEME_CURRENT",
+                     "SUB_PROCESSOR", "PROCTHROTTLEMAX"],
+                    creationflags=_sp.CREATE_NO_WINDOW, text=True)
+                for line in out.splitlines():
+                    if "Valeur d'alimentation secteur actuelle" in line \
+                            or "Current AC Power Setting Index" in line:
+                        return int(line.strip().split()[-1], 16)
+            except Exception:
+                pass
+            return 100
+
+        v_cpu_max = tk.IntVar(value=_get_cpu_max())
+
+        def _apply_cpu_max(*_):
+            val = int(v_cpu_max.get())
+            _run("powercfg", "/setacvalueindex", "SCHEME_CURRENT",
+                 "SUB_PROCESSOR", "PROCTHROTTLEMAX", str(val))
+            _run("powercfg", "/setdcvalueindex", "SCHEME_CURRENT",
+                 "SUB_PROCESSOR", "PROCTHROTTLEMAX", str(val))
+            _run("powercfg", "/setactive", "SCHEME_CURRENT")
+
+        def cpu_max_row(r):
+            mk_scale(r, v_cpu_max, 20, 100, 5)
+            v_cpu_max.trace_add("write", _apply_cpu_max)
+            tk.Label(r, text="%", font=("Segoe UI", 9),
+                     bg=C["surface2"], fg=C["fg_dark"]).pack(side="left")
+
+        row("Perf. max CPU (plan énergie)", cpu_max_row)
+
+        # GPU tools info
+        oc_info = tk.Frame(content, bg=C["surface"],
+                           highlightbackground=C["border2"], highlightthickness=1)
+        oc_info.pack(fill="x", pady=4, **P)
+
+        def _launch_msi(*_):
+            paths = [
+                r"C:\Program Files (x86)\MSI Afterburner\MSIAfterburner.exe",
+                r"C:\Program Files\MSI Afterburner\MSIAfterburner.exe",
+            ]
+            for p in paths:
+                if _sh.which(p) or __import__("os").path.exists(p):
+                    _sp.Popen([p])
+                    return
+            import tkinter.messagebox as mb
+            mb.showinfo("MSI Afterburner",
+                        "MSI Afterburner non trouvé.\nInstallation : msi.com/afterburner")
+
+        tk.Label(oc_info, text="GPU OC / Undervolt",
+                 font=("Segoe UI", 9, "bold"),
+                 bg=C["surface"], fg=C["fg"]).pack(anchor="w", padx=14, pady=(8, 2))
+        tk.Label(oc_info,
+                 text="Utilise MSI Afterburner pour OC/undervolt GPU\n"
+                      "(Core Voltage, Core Clock, Memory Clock).",
+                 font=("Segoe UI", 8), bg=C["surface"],
+                 fg=C["fg_dark"], justify="left").pack(anchor="w", padx=14)
+        btn_msi = tk.Button(oc_info, text="Ouvrir MSI Afterburner",
+                            font=("Segoe UI", 8), bg=C["acc"], fg="#fff",
+                            cursor="hand2", relief="flat", padx=10, pady=4,
+                            command=_launch_msi)
+        btn_msi.pack(anchor="w", padx=14, pady=(4, 10))
 
         tk.Frame(content, bg=C["bg"], height=20).pack()
 

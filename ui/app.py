@@ -33,8 +33,10 @@ class App:
         # Drag / resize
         self._drag = False
         self._rsz = False
+        self._from_titlebar = False  # only drag when pressed on titlebar
         self._dx = self._dy = 0
         self._rx = self._ry = self._rw = self._rh = self._wx = self._wy = 0
+        self._graph_tick = 0  # throttle graph redraws
 
         # Sub-components
         self._sidebar: Sidebar | None = None
@@ -61,33 +63,9 @@ class App:
         self._poll()
 
     def _apply_tk_theme(self):
-        """Configure dark theme for the application."""
-        r = self.root
-        r.option_add("*TCombobox*Listbox.background", C["surface"])
-        r.option_add("*TCombobox*Listbox.foreground", C["fg"])
-        r.option_add("*TCombobox*Listbox.selectBackground", C["acc"])
-        r.option_add("*TCombobox*Listbox.selectForeground", C["fg_hi"])
-        r.option_add("*TCombobox*Listbox.font", "Segoe\\ UI 9")
-        st = ttk.Style(r)
+        """Configure dark theme for ttk scrollbars."""
+        st = ttk.Style(self.root)
         st.theme_use("default")
-        st.configure("Dark.TCombobox",
-            fieldbackground=C["surface"],
-            background=C["surface2"],
-            foreground=C["fg"],
-            arrowcolor=C["fg"],
-            bordercolor=C["border"],
-            lightcolor=C["border"],
-            darkcolor=C["border"],
-            relief="flat",
-        )
-        st.map("Dark.TCombobox",
-            fieldbackground=[("readonly", C["surface"]),
-                             ("disabled", C["surface2"])],
-            foreground=[("readonly", C["fg"]),
-                        ("disabled", C["fg_dim"])],
-            background=[("active", C["surface2"]),
-                        ("readonly", C["surface2"])],
-        )
         st.configure("Vertical.TScrollbar",
             background=C["surface2"], troughcolor=C["bg"],
             arrowcolor=C["fg_dim"], bordercolor=C["bg"],
@@ -108,9 +86,6 @@ class App:
         r.geometry(f"{w}x{h}+{x}+{y}")
         r.minsize(720, 480)
         r.bind("<Motion>", self._on_motion)
-        r.bind("<ButtonPress-1>", self._on_press)
-        r.bind("<B1-Motion>", self._on_drag_ev)
-        r.bind("<ButtonRelease-1>", self._on_release)
 
     def _build_titlebar(self):
         """Build the title bar."""
@@ -120,7 +95,7 @@ class App:
         self._titlebar = tb
 
         for w in (tb,):
-            w.bind("<ButtonPress-1>", self._on_press)
+            w.bind("<ButtonPress-1>", self._on_press_titlebar)
             w.bind("<B1-Motion>", self._on_drag_ev)
             w.bind("<ButtonRelease-1>", self._on_release)
 
@@ -157,7 +132,7 @@ class App:
         self._tabbar.pack(fill="x", side="top")
         self._tabbar.pack_propagate(False)
 
-        self._tabbar.bind("<ButtonPress-1>", self._on_press)
+        self._tabbar.bind("<ButtonPress-1>", self._on_press_titlebar)
         self._tabbar.bind("<B1-Motion>", self._on_drag_ev)
         self._tabbar.bind("<ButtonRelease-1>", self._on_release)
 
@@ -224,7 +199,7 @@ class App:
         self._grip = tk.Label(self.root, text="◢", font=("Segoe UI", 9),
                               bg=C["foot_bg"], fg=C["border2"], cursor="size_nw_se")
         self._grip.place(relx=1.0, rely=1.0, anchor="se", y=-2)
-        self._grip.bind("<ButtonPress-1>", self._on_press)
+        self._grip.bind("<ButtonPress-1>", self._on_grip_press)
         self._grip.bind("<B1-Motion>", self._on_drag_ev)
         self._grip.bind("<ButtonRelease-1>", self._on_release)
 
@@ -289,11 +264,21 @@ class App:
             self._scroll_targets.append(canvas)
 
     def _on_global_scroll(self, event):
-        """Handle global mouse wheel scroll."""
-        # Scroll all registered canvases
+        """Scroll only the canvas the cursor is inside."""
+        w = event.widget
+        for canvas in self._scroll_targets:
+            try:
+                # Only scroll a canvas if the event originated inside it
+                if w is canvas or str(w).startswith(str(canvas)):
+                    canvas.yview_scroll(-1 * (event.delta // 120), "units")
+                    return
+            except Exception:
+                pass
+        # Fallback: scroll first visible target
         for canvas in self._scroll_targets:
             try:
                 canvas.yview_scroll(-1 * (event.delta // 120), "units")
+                return
             except Exception:
                 pass
 
@@ -302,6 +287,7 @@ class App:
         for canvas in self._scroll_targets:
             try:
                 canvas.yview_scroll(-1, "units")
+                return
             except Exception:
                 pass
 
@@ -310,6 +296,7 @@ class App:
         for canvas in self._scroll_targets:
             try:
                 canvas.yview_scroll(1, "units")
+                return
             except Exception:
                 pass
 
@@ -321,21 +308,37 @@ class App:
         return rx >= ww - 22 and ry >= wh - 22
 
     def _on_motion(self, e):
-        """Handle mouse motion."""
+        """Handle mouse motion – only update cursor when it actually changes."""
         try:
             rx = e.x_root - self.root.winfo_rootx()
             ry = e.y_root - self.root.winfo_rooty()
-            self.root.config(cursor="size_nw_se" if self._in_grip(rx, ry) else "")
+            want = "size_nw_se" if self._in_grip(rx, ry) else ""
+            if getattr(self, "_cursor", None) != want:
+                self._cursor = want
+                self.root.config(cursor=want)
         except Exception:
             pass
 
-    def _on_press(self, e):
-        """Handle mouse button press."""
+    def _on_grip_press(self, e):
+        """Grip press: activate resize only."""
+        self._rsz = True
+        self._drag = False
+        self._from_titlebar = False
+        self._rx, self._ry = e.x_root, e.y_root
+        self._rw = self.root.winfo_width()
+        self._rh = self.root.winfo_height()
+        self._wx = self.root.winfo_x()
+        self._wy = self.root.winfo_y()
+        return "break"
+
+    def _on_press_titlebar(self, e):
+        """Titlebar press: activate drag (and resize if in grip)."""
         rx = e.x_root - self.root.winfo_rootx()
         ry = e.y_root - self.root.winfo_rooty()
         if self._in_grip(rx, ry):
             self._rsz = True
             self._drag = False
+            self._from_titlebar = False
             self._rx, self._ry = e.x_root, e.y_root
             self._rw = self.root.winfo_width()
             self._rh = self.root.winfo_height()
@@ -344,18 +347,19 @@ class App:
         else:
             self._rsz = False
             self._drag = True
+            self._from_titlebar = True
             self._dx = e.x_root - self.root.winfo_x()
             self._dy = e.y_root - self.root.winfo_y()
 
     def _on_drag_ev(self, e):
-        """Handle mouse drag."""
+        """Handle mouse drag – only from titlebar or resize grip."""
         if self._rsz:
             nw = max(720, self._rw + (e.x_root - self._rx))
             nh = max(480, self._rh + (e.y_root - self._ry))
             self.cfg["win_w"] = nw
             self.cfg["win_h"] = nh
             self.root.geometry(f"{nw}x{nh}+{self._wx}+{self._wy}")
-        elif self._drag:
+        elif self._drag and self._from_titlebar:
             nx = e.x_root - self._dx
             ny = e.y_root - self._dy
             self.root.geometry(f"+{nx}+{ny}")
@@ -379,11 +383,14 @@ class App:
             self._update_footer(snap)
             if self._active_tab == "perf":
                 hist = snap.get("_hist", {})
+                self._graph_tick += 1
+                update_graphs = (self._graph_tick % 2 == 0)  # graphs at half rate
                 if self._sidebar:
                     self._sidebar.update_values(snap)
-                    self._sidebar.update_graphs(hist)
+                    if update_graphs:
+                        self._sidebar.update_graphs(hist)
                 if self._detail:
-                    self._detail.update(snap, hist)
+                    self._detail.update(snap, hist if update_graphs else {})
         except Exception:
             pass
         from config import POLL_MS

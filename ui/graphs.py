@@ -57,27 +57,32 @@ class MiniGraph(tk.Canvas):
         self.bind("<Configure>", self._on_resize)
 
     def _on_resize(self, _e):
+        # Debounce: wait 60ms after last resize event before redrawing
+        if hasattr(self, "_resize_id"):
+            self.after_cancel(self._resize_id)
+        self._resize_id = self.after(60, self._do_resize)
+
+    def _do_resize(self):
         self._last_pts = []
         if self.history:
             self.update(self.history)
-    
+
     def update(self, history):
-        """Update graph incrementally."""
+        """Update graph incrementally using coords() to avoid delete+recreate."""
         if not history or len(history) < 2:
             return
-        
+
         self.history = list(history)
-        
+
         try:
             cw = self.winfo_width()
             ch = self.winfo_height()
         except Exception:
             cw, ch = 55, 35
-        
+
         if cw < 4 or ch < 4:
             return
-        
-        # Calculate points
+
         top = 100.0
         n = len(self.history)
         step = cw / max(n - 1, 1)
@@ -86,49 +91,42 @@ class MiniGraph(tk.Canvas):
             x = i * step
             y = ch - 2 - (min(v, top) / top) * (ch - 4)
             pts.append((max(0, x), max(1, min(ch - 1, y))))
-        
-        # Only redraw if points changed significantly
+
+        # Skip if nothing changed
         if len(pts) == len(self._last_pts):
-            changed = False
-            for i, (p1, p2) in enumerate(zip(pts, self._last_pts)):
-                if abs(p1[0] - p2[0]) > 0.5 or abs(p1[1] - p2[1]) > 0.5:
-                    changed = True
-                    break
+            changed = any(
+                abs(p1[0] - p2[0]) > 0.5 or abs(p1[1] - p2[1]) > 0.5
+                for p1, p2 in zip(pts, self._last_pts)
+            )
             if not changed:
                 return
-        
         self._last_pts = pts
-        
-        # Delete old items
-        if self._poly_id:
-            self.delete(self._poly_id)
-        if self._line_id:
-            self.delete(self._line_id)
-        if self._dot_id:
-            self.delete(self._dot_id)
-        
-        # Draw polygon (fill)
+
+        # Update or create polygon (fill area)
         if len(pts) >= 2:
             poly = [(0, ch)] + pts + [(pts[-1][0], ch)]
             flat = [c for p in poly for c in p]
-            self._poly_id = self.create_polygon(
-                flat, fill=self._fill, outline=""
-            )
-        
-        # Draw line
+            if self._poly_id:
+                self.coords(self._poly_id, flat)
+            else:
+                self._poly_id = self.create_polygon(flat, fill=self._fill, outline="")
+
+        # Update or create line
         if len(pts) >= 2:
             flat = [c for p in pts for c in p]
-            self._line_id = self.create_line(
-                flat, fill=self.color, width=1, smooth=True
-            )
-        
-        # Draw dot at end
+            if self._line_id:
+                self.coords(self._line_id, flat)
+            else:
+                self._line_id = self.create_line(flat, fill=self.color, width=1, smooth=True)
+
+        # Update or create dot
         if pts:
             lx, ly = pts[-1]
-            self._dot_id = self.create_oval(
-                lx - 2, ly - 2, lx + 2, ly + 2,
-                fill=self.color, outline=""
-            )
+            if self._dot_id:
+                self.coords(self._dot_id, lx - 2, ly - 2, lx + 2, ly + 2)
+            else:
+                self._dot_id = self.create_oval(lx - 2, ly - 2, lx + 2, ly + 2,
+                                                fill=self.color, outline="")
 
 
 class MainGraph(tk.Canvas):
@@ -155,7 +153,12 @@ class MainGraph(tk.Canvas):
         self.bind("<Configure>", self._on_resize)
 
     def _on_resize(self, _e):
-        # Force a full redraw at the new size on the next update.
+        # Debounce: wait 60ms after last resize event before redrawing
+        if hasattr(self, "_resize_id"):
+            self.after_cancel(self._resize_id)
+        self._resize_id = self.after(60, self._do_resize)
+
+    def _do_resize(self):
         self._last_pts = []
         self._last_top = None
         if self.history:
@@ -223,54 +226,53 @@ class MainGraph(tk.Canvas):
                 return
         
         self._last_pts = pts
-        
-        # Delete old items
-        if self._poly_id:
-            self.delete(self._poly_id)
-        if self._line_id:
-            self.delete(self._line_id)
-        if self._dot_id:
-            self.delete(self._dot_id)
-        if self._dot_outline_id:
-            self.delete(self._dot_outline_id)
-        
-        # Draw polygon (fill)
+
+        # Update or create polygon (fill area) using coords() - no delete needed
         if len(pts) >= 2:
             poly = [(0, ch)] + pts + [(pts[-1][0], ch)]
             flat = [c for p in poly for c in p]
             if len(flat) >= 6:
-                self._poly_id = self.create_polygon(
-                    flat, fill=self._fill, outline=""
-                )
-        
-        # Draw line
+                if self._poly_id:
+                    self.coords(self._poly_id, flat)
+                else:
+                    self._poly_id = self.create_polygon(flat, fill=self._fill, outline="")
+
+        # Update or create line
         if len(pts) >= 2:
             flat = [c for p in pts for c in p]
-            self._line_id = self.create_line(
-                flat, fill=self.color, width=2, smooth=True,
-                joinstyle="round", capstyle="round"
-            )
-        
-        # Draw dot at end
+            if self._line_id:
+                self.coords(self._line_id, flat)
+            else:
+                self._line_id = self.create_line(
+                    flat, fill=self.color, width=2, smooth=True,
+                    joinstyle="round", capstyle="round"
+                )
+
+        # Update or create dots
         if pts:
             lx, ly = pts[-1]
-            self._dot_outline_id = self.create_oval(
-                lx - 5, ly - 5, lx + 5, ly + 5,
-                fill="", outline=self.color, width=1
-            )
-            self._dot_id = self.create_oval(
-                lx - 3, ly - 3, lx + 3, ly + 3,
-                fill=self.color, outline=""
-            )
-        
-        # Draw scale label if dynamic
+            if self._dot_outline_id:
+                self.coords(self._dot_outline_id, lx - 5, ly - 5, lx + 5, ly + 5)
+            else:
+                self._dot_outline_id = self.create_oval(
+                    lx - 5, ly - 5, lx + 5, ly + 5, fill="", outline=self.color, width=1
+                )
+            if self._dot_id:
+                self.coords(self._dot_id, lx - 3, ly - 3, lx + 3, ly + 3)
+            else:
+                self._dot_id = self.create_oval(lx - 3, ly - 3, lx + 3, ly + 3,
+                                                fill=self.color, outline="")
+
+        # Update scale label if dynamic
         if metric_meta.get("dynamic"):
             if self._scale_label_id:
-                self.delete(self._scale_label_id)
-            self._scale_label_id = self.create_text(
-                cw - 4, pad + 2, text=f"{int(top)}", anchor="ne",
-                fill=C["dim"], font=("Consolas", 7)
-            )
+                self.itemconfig(self._scale_label_id, text=f"{int(top)}")
+                self.coords(self._scale_label_id, cw - 4, pad + 2)
+            else:
+                self._scale_label_id = self.create_text(
+                    cw - 4, pad + 2, text=f"{int(top)}", anchor="ne",
+                    fill=C["dim"], font=("Consolas", 7)
+                )
     
     def _draw_grid(self, cw, ch, top):
         """Draw grid lines."""

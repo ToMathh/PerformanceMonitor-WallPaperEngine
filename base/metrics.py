@@ -7,8 +7,19 @@ from config import C, T
 def build_metrics(cfg, disk_drives=None):
     """Build the list of metrics based on configuration."""
     lang = cfg.get("language", "fr")
-    metrics = []
-    
+
+    # General summary is always first in the sidebar.
+    metrics = [{
+        "key":        "general",
+        "label":      "GÉNÉRAL",
+        "color":      C["fg_dim"],
+        "unit":       "",
+        "max":        100,
+        "warn":       None,
+        "hot":        None,
+        "is_summary": True,
+    }]
+
     if cfg.get("show_cpu", True):
         metrics.append({
             "key": "cpu",
