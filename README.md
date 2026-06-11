@@ -1,14 +1,14 @@
 # 🐱 StrangeCat Monitor - Minimal (Server) v6.0
 
-A lightweight, headless version of StrangeCat Monitor that runs as a system tray icon and provides system performance data via HTTP. Perfect for remote monitoring, Wallpaper Engine integration, or background operation without a GUI.
+A lightweight, headless version of StrangeCat Monitor that runs as a system tray icon and provides system performance data via HTTP. Perfect for Wallpaper Engine integration, or background operation without a GUI.
 
 * ✅ No window or graphics
 * ✅ Ultra-lightweight & portable
 * ✅ Works locally on `127.0.0.1:5100/performance`
 * ✅ Compatible with Wallpaper Engine
 * ✅ System tray icon with settings
-* ✅ Configurable refresh rates (Low 3s / Normal 2s / Realtime 1s)
-* ✅ Startup at boot support
+* ✅ Configurable refresh rates (Low 3s / Realtime 1s)
+* ✅ Startup at boot support settings
 * ✅ Adaptive disk polling (slow drives = 5min)
 * ✅ Single instance enforcement
 
