@@ -17,6 +17,9 @@ _app_start_time = time.time()
 _net_prev = dict(sent=0, recv=0, t=0.0)
 _net_lock = threading.Lock()
 
+# _gpu_cache stores the last successful nvidia-smi result.
+# It is written on every poll but no longer used as an early-return guard:
+# rate control is handled by the dispatcher's _last timestamps instead.
 _gpu_cache = dict(ts=0.0, data={
     "gpu_usage": 0.0, "gpu_temp": 0.0,
     "vram_used_gb": 0.0, "vram_total_gb": 0.0, "vram_usage": 0.0,
@@ -132,11 +135,13 @@ def collect_ram():
 
 
 def collect_gpu():
-    """Collect GPU metrics with caching."""
-    with _gpu_lock:
-        now = time.time()
-        if now - _gpu_cache["ts"] < 4.0 - 0.1:
-            return dict(_gpu_cache["data"])
+    """Collect GPU metrics via nvidia-smi.
+
+    The internal cache guard has been intentionally removed: the DataCollector
+    dispatcher already enforces the configured rate via _last timestamps, so a
+    second cache here would only introduce extra latency (was 4 s regardless of
+    the configured refresh mode).
+    """
     try:
         out = subprocess.check_output(
             ["nvidia-smi",
@@ -339,9 +344,9 @@ class DataCollector:
         self._last    = {}   # last-dispatch timestamps per metric key
         self._running = False
 
-        # One worker thread is enough: metrics are collected sequentially
-        # anyway because only one can be in-flight at a time.
-        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="SCat")
+        # Two worker threads: one for fast metrics (CPU/RAM/NET), one for
+        # the slow GPU subprocess, so they never block each other.
+        self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="SCat")
         self._thread = None
 
         # Prime the network counter so the first delta is meaningful.
