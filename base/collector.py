@@ -1,10 +1,12 @@
 """
-Data collector using ThreadPoolExecutor for parallel metric collection.
-Optimized for minimal CPU/RAM consumption.
+StrangeCat Monitor - UltraLowPerf data collector
+=================================================
+ThreadPoolExecutor-based metric collection for the headless HTTP server.
+Only essential metrics are collected (CPU, RAM, GPU, CPU temp, network, disks).
+No history / no graphs - all surplus is stripped to keep CPU usage minimal.
 """
 import time
 import threading
-import collections
 import os
 from concurrent.futures import ThreadPoolExecutor
 import psutil
@@ -113,21 +115,6 @@ def collect_cpu():
     except Exception:
         return dict(cpu=0.0, cpu_percore=[], cpu_freq_cur=0, cpu_freq_max=0,
                     cpu_logical=0, cpu_physical=0, uptime_sys=0, uptime_app=0)
-
-
-def collect_procs():
-    """Collect process and thread counts (expensive, runs infrequently)."""
-    try:
-        procs = len(psutil.pids())
-        threads = 0
-        for p in psutil.process_iter(["num_threads"]):
-            try:
-                threads += p.info.get("num_threads") or 0
-            except Exception:
-                pass
-        return dict(process_count=procs, thread_count=threads)
-    except Exception:
-        return dict(process_count=0, thread_count=0)
 
 
 def collect_ram():
@@ -334,85 +321,45 @@ def collect_cpu_temp():
     return dict(cpu_temp=val, cpu_temp_method=method)
 
 
-def collect_fans():
-    """Collect fan speeds."""
-    cpu_fan, case_fans = None, []
-    cpu_kw = ("cpu", "pump", "water", "aio", "liquid")
-    case_kw = ("case", "chassis", "sys", "fan")
-    try:
-        f = psutil.sensors_fans()
-        if f:
-            for name, lst in f.items():
-                for fan in lst:
-                    if fan.current and fan.current > 50:
-                        n = name.lower()
-                        if any(k in n for k in cpu_kw):
-                            if cpu_fan is None or fan.current > cpu_fan:
-                                cpu_fan = round(fan.current)
-                        else:
-                            case_fans.append(round(fan.current))
-    except Exception:
-        pass
-    try:
-        import wmi
-        for ns in ("root/LibreHardwareMonitor", "root/OpenHardwareMonitor"):
-            try:
-                for s in wmi.WMI(namespace=ns).Sensor():
-                    if s.SensorType == "Fan" and s.Value and s.Value > 50:
-                        n = s.Name.lower()
-                        if any(k in n for k in cpu_kw):
-                            if cpu_fan is None or s.Value > cpu_fan:
-                                cpu_fan = round(s.Value)
-                        else:
-                            case_fans.append(round(s.Value))
-            except Exception:
-                pass
-    except Exception:
-        pass
-    avg_case = round(sum(case_fans)/len(case_fans)) if case_fans else None
-    return dict(cpu_fan=cpu_fan, case_fans=avg_case, case_fans_list=case_fans)
-
-
 class DataCollector:
-    """Main data collector using ThreadPoolExecutor with optimized rates."""
-    
+    """Headless metric collector for the UltraLowPerf HTTP server.
+
+    Intentional restrictions vs. the full Beta collector:
+    - Single worker thread (max_workers=1) – no parallelism needed.
+    - No history deques – no graphs, so nothing to store.
+    - No process / fan collection (disabled via RATE_PROC / RATE_FAN = 999 s).
+    - Main loop sleeps 1 s between dispatch rounds (lower than any metric rate).
+    """
+
     def __init__(self, cfg):
-        from config import RATE_CPU, RATE_RAM, RATE_NET, RATE_GPU, RATE_TEMP, RATE_FAN, RATE_DISK, HIST_LEN
-        
-        self._cfg = cfg
-        self._lock = threading.Lock()
-        self._data = {}
-        self._disks = {}
-        self._hist = {}
-        self._last = {}
+        self._cfg     = cfg
+        self._lock    = threading.Lock()
+        self._data    = {}   # latest metric values
+        self._disks   = {}   # latest disk metrics keyed by drive letter
+        self._last    = {}   # last-dispatch timestamps per metric key
         self._running = False
-        self._pool = ThreadPoolExecutor(
-            max_workers=min(os.cpu_count() or 4, 8),
-            thread_name_prefix="SCat",
-        )
+
+        # One worker thread is enough: metrics are collected sequentially
+        # anyway because only one can be in-flight at a time.
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="SCat")
         self._thread = None
-        
-        # Initialize histories
-        for key in ("cpu", "ram", "gpu", "gpu_temp", "vram", "net_dn", "net_up",
-                    "cpu_temp", "cpu_fan", "case_fans"):
-            self._hist[key] = collections.deque([0.0] * HIST_LEN, maxlen=HIST_LEN)
-        
-        # Initialize network
+
+        # Prime the network counter so the first delta is meaningful.
         collect_net()
         time.sleep(0.05)
-        
-        # Detect disk drives
+
+        # Build the initial drive list so collect_disks() has something to work with.
         detect_disk_drives()
     
     def start(self):
-        """Start the collector thread."""
+        """Spawn the background collection thread."""
         self._running = True
-        self._thread = threading.Thread(
+        self._thread  = threading.Thread(
             target=self._loop, name="SCat-collect", daemon=True)
         self._thread.start()
-    
+
     def stop(self):
-        """Stop the collector."""
+        """Request collection to stop and clean up the thread pool."""
         self._running = False
         self._pool.shutdown(wait=False, cancel_futures=True)
 
@@ -422,51 +369,48 @@ class DataCollector:
             self._cfg = cfg
     
     def _loop(self):
-        """Main collection loop with optimized refresh rates.
+        """Background collection loop (runs in a daemon thread).
 
-        Tasks are dispatched to the thread pool and their results are stored
-        via non-blocking done-callbacks. This way slow collectors (GPU via
-        nvidia-smi, temperature/fans via WMI) never stall the fast
-        CPU/RAM/NET updates, keeping the UI fluid and spreading work across
-        cores.
+        Each metric is submitted to the single worker thread pool when its
+        configured rate interval has elapsed.  Results are stored via a
+        done-callback so the loop is never blocked by slow collectors (e.g.
+        nvidia-smi, WMI temperature queries).
         """
         from config import rate_for
 
-        # Avoid dispatching the same task again while a previous one is running.
-        inflight = set()
+        inflight = set()  # keys whose futures are still pending
 
         def dispatch(key, rate, fn):
+            """Submit fn() if the metric interval has elapsed and no prior call is pending."""
             if not self._running:
                 return
             now = time.time()
             if key in inflight:
-                return
+                return  # still waiting for the previous result
             if now - self._last.get(key, 0) < rate:
-                return
+                return  # not due yet
             self._last[key] = now
             inflight.add(key)
             try:
                 fut = self._pool.submit(fn)
             except RuntimeError:
-                # Pool was shut down while looping.
-                inflight.discard(key)
+                inflight.discard(key)  # pool was shut down
                 return
             fut.add_done_callback(lambda f, k=key: self._on_result(k, f, inflight))
 
         while self._running:
             cfg = self._cfg
-            dispatch("cpu", rate_for("cpu", cfg), collect_cpu)
-            dispatch("ram", rate_for("ram", cfg), collect_ram)
-            dispatch("net", rate_for("net", cfg), lambda: collect_net(cfg))
-            dispatch("proc", rate_for("proc", cfg), collect_procs)
-            dispatch("gpu", rate_for("gpu", cfg), collect_gpu)
+            # Essential metrics only - proc/fans have rate=999 s so they never fire
+            dispatch("cpu",  rate_for("cpu",  cfg), collect_cpu)
+            dispatch("ram",  rate_for("ram",  cfg), collect_ram)
+            dispatch("net",  rate_for("net",  cfg), lambda: collect_net(cfg))
+            dispatch("gpu",  rate_for("gpu",  cfg), collect_gpu)
             dispatch("temp", rate_for("temp", cfg), collect_cpu_temp)
-            dispatch("fans", rate_for("fans", cfg), collect_fans)
             dispatch("disk", rate_for("disk", cfg), collect_disks)
-            time.sleep(0.1)
+            time.sleep(1.0)  # tick interval - must be <= smallest RATE_* value
 
     def _on_result(self, key, fut, inflight):
-        """Store a completed collection result (runs in worker thread)."""
+        """Called by the thread pool when a metric future completes."""
         try:
             result = fut.result()
             with self._lock:
@@ -474,60 +418,24 @@ class DataCollector:
                     self._disks = result or {}
                 elif isinstance(result, dict):
                     self._data.update(result)
-            self._update_hist(result if key != "disk" else {}, key)
+            # No history updates: this build has no graphs
         except Exception:
             pass
         finally:
             inflight.discard(key)
     
-    def _update_hist(self, data, key):
-        """Update history deque."""
-        pushes = []
-        if key == "cpu":
-            pushes = [("cpu", data.get("cpu", 0))]
-        elif key == "ram":
-            pushes = [("ram", data.get("memory", 0))]
-        elif key == "gpu":
-            pushes = [
-                ("gpu", data.get("gpu_usage", 0)),
-                ("gpu_temp", data.get("gpu_temp", 0)),
-                ("vram", data.get("vram_usage", 0)),
-            ]
-        elif key == "net":
-            pushes = [
-                ("net_dn", data.get("download_speed", 0)),
-                ("net_up", data.get("upload_speed", 0)),
-            ]
-        elif key == "temp":
-            pushes = [("cpu_temp", data.get("cpu_temp", 0) or 0)]
-        elif key == "fans":
-            pushes = [
-                ("cpu_fan", data.get("cpu_fan", 0) or 0),
-                ("case_fans", data.get("case_fans", 0) or 0),
-            ]
-        
-        with self._lock:
-            for hkey, hval in pushes:
-                if hkey in self._hist:
-                    self._hist[hkey].append(float(hval))
-            # Disques: historique par drive
-            for drive, ddata in self._disks.items():
-                hk = f"disk_{drive}"
-                if hk not in self._hist:
-                    self._hist[hk] = collections.deque([0.0] * 300, maxlen=300)
-                self._hist[hk].append(float(ddata.get("pct", 0)))
-    
     def snapshot(self):
-        """Get current data snapshot."""
+        """Return a consistent copy of the latest collected data."""
         with self._lock:
-            d = dict(self._data)
-            d["_disks"] = dict(self._disks)
-            d["_hist"] = {k: list(v) for k, v in self._hist.items()}
-            d["uptime_app"] = time.time() - _app_start_time
+            d              = dict(self._data)
+            d["_disks"]    = dict(self._disks)
+            d["_hist"]     = {}  # no history in headless build
+            d["uptime_app"]= time.time() - _app_start_time
         return d
     
     def http_payload(self):
-        """Get HTTP payload in exact required format."""
+        """Build the JSON payload served on the /performance endpoint."""
+        # Format mirrors the full Beta app so any consumer works with both.
         with self._lock:
             d = self._data
             di = self._disks
@@ -544,6 +452,7 @@ class DataCollector:
             vt = d.get("vram_total_gb", 0)
             ps["vram_gb"] = f"{vu:.1f} GB/{vt:.1f} GB"
             ps["gpu_temp"] = d.get("gpu_temp", 0)
+            ps["cpu_temp"] = d.get("cpu_temp", 0)
             ps["upload_speed"] = d.get("upload_speed", 0)
             ps["download_speed"] = d.get("download_speed", 0)
             ps["timestamp"] = d.get("timestamp", time.time())
