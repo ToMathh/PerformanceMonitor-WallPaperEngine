@@ -34,11 +34,11 @@ echo [2/4] Copying to safe temp folder: %BUILD_DIR%
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 mkdir "%BUILD_DIR%"
 copy /y "%SRC%strangecat_monitor.py" "%BUILD_DIR%\strangecat_monitor.py" >nul
-copy /y "%SRC%make_icon.py"          "%BUILD_DIR%\make_icon.py"          >nul
+copy /y "%SRC%make_icon_stable.py"          "%BUILD_DIR%\make_icon_stable.py"          >nul
 
 :: Generate icon in safe dir
 echo [3/4] Generating icon.ico...
-python "%BUILD_DIR%\make_icon.py"
+python "%BUILD_DIR%\make_icon_stable.py"
 if not exist "%BUILD_DIR%\icon.ico" (
     echo [ERROR] icon.ico not generated.
     pause & exit /b 1
