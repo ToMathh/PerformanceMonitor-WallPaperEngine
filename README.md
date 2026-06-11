@@ -67,7 +67,7 @@ Compatible wallpapers will now display your live CPU, RAM, GPU, temperatures, an
 3. Double-click:
 
 ```txt
-StrangeCat Monitor Server.exe
+StrangeCat.Monitor.Minimal.RECOMMANDED.exe
 ```
 
 No installation required.
@@ -164,8 +164,7 @@ Choose your refresh mode via the tray menu:
 | Mode      | CPU/RAM/GPU/VRAM/Network | Disks   |
 | --------- | ------------------------ | ------- |
 | Realtime  | 1 second                 | 60s     |
-| Normal    | 2 seconds                | 60s     |
-| Low       | 3 seconds (default)      | 60s     |
+| Low       | 3 seconds                | 60s     |
 
 **Slow drives** automatically back off to 5-minute polling to prevent system slowdowns.
 
