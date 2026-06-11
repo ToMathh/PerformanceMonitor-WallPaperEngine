@@ -131,6 +131,7 @@ DEFAULTS = {
     "http_port": 5100,
     "refresh_mode": "normal",
     "disk_interval": 60.0,
+    "net_unit": "mb",
     "pos_x": 140,
     "pos_y": 80,
     "win_w": 980,

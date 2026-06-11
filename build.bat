@@ -35,11 +35,11 @@ if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 mkdir "%BUILD_DIR%"
 xcopy /e /i /y /q "%SRC%base" "%BUILD_DIR%\base" >nul
 xcopy /e /i /y /q "%SRC%ui"   "%BUILD_DIR%\ui"   >nul
-copy /y "%SRC%make_icon.py" "%BUILD_DIR%\make_icon.py" >nul
+copy /y "%SRC%make_icon_beta.py" "%BUILD_DIR%\make_icon_beta.py" >nul
 
 :: Generate icon in safe dir
 echo [3/4] Generating icon.ico...
-python "%BUILD_DIR%\make_icon.py"
+python "%BUILD_DIR%\make_icon_beta.py"
 if not exist "%BUILD_DIR%\icon.ico" (
     echo [ERROR] icon.ico not generated.
     pause & exit /b 1

@@ -182,7 +182,7 @@ def collect_gpu():
         return dict(data)
 
 
-def collect_net():
+def collect_net(cfg=None):
     """Collect network metrics."""
     try:
         with _net_lock:
@@ -190,8 +190,11 @@ def collect_net():
             t_now = time.time()
             prev = _net_prev.copy()
             dt = max(t_now - prev["t"], 0.01)
-            up = max(round((now.bytes_sent - prev["sent"]) / dt / 1_048_576, 2), 0.0)
-            dn = max(round((now.bytes_recv - prev["recv"]) / dt / 1_048_576, 2), 0.0)
+            # Determine unit based on config (mb or kb)
+            unit = (cfg or {}).get("net_unit", "mb")
+            divisor = 1_048_576 if unit == "mb" else 1_024
+            up = max(round((now.bytes_sent - prev["sent"]) / dt / divisor, 2), 0.0)
+            dn = max(round((now.bytes_recv - prev["recv"]) / dt / divisor, 2), 0.0)
             _net_prev.update(sent=now.bytes_sent, recv=now.bytes_recv, t=t_now)
         return dict(upload_speed=up, download_speed=dn)
     except Exception:
@@ -454,7 +457,7 @@ class DataCollector:
             cfg = self._cfg
             dispatch("cpu", rate_for("cpu", cfg), collect_cpu)
             dispatch("ram", rate_for("ram", cfg), collect_ram)
-            dispatch("net", rate_for("net", cfg), collect_net)
+            dispatch("net", rate_for("net", cfg), lambda: collect_net(cfg))
             dispatch("proc", rate_for("proc", cfg), collect_procs)
             dispatch("gpu", rate_for("gpu", cfg), collect_gpu)
             dispatch("temp", rate_for("temp", cfg), collect_cpu_temp)
