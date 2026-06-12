@@ -8,6 +8,8 @@ No history / no graphs - all surplus is stripped to keep CPU usage minimal.
 import time
 import threading
 import os
+import json
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 import psutil
 import subprocess
@@ -16,6 +18,16 @@ import ctypes
 _app_start_time = time.time()
 _net_prev = dict(sent=0, recv=0, t=0.0)
 _net_lock = threading.Lock()
+
+# ── LibreHardwareMonitor HTTP reader ──────────────────────────────────────────
+# LHM exposes a JSON sensor tree on http://localhost:8085/data.json when its
+# "Remote Web Server" option is enabled (HTTP Server → Listen on port 8085).
+# Its GPU Core Load matches Task Manager (DXGI counters) unlike nvidia-smi.
+LHM_URL         = "http://localhost:8085/data.json"
+_LHM_TIMEOUT    = 1.5   # seconds – local request should be near-instant
+_LHM_RETRY_FAIL = 60.0  # back off 60 s after a failed connection
+_lhm_ok         = None  # None=untested  True=working  False=failed
+_lhm_retry_ts   = 0.0   # earliest time to retry after failure
 
 # _gpu_cache stores the last successful nvidia-smi result.
 # It is written on every poll but no longer used as an early-return guard:
@@ -132,6 +144,139 @@ def collect_ram():
         )
     except Exception:
         return dict(memory=0.0, memory_used_gb=0, memory_total_gb=0, memory_avail_gb=0)
+
+
+# ── LibreHardwareMonitor helpers ──────────────────────────────────────────────
+
+def _lhm_val(s):
+    """Extract the float from a LHM value string like '45.0 °C' → 45.0."""
+    try:
+        return float(str(s).split()[0].replace(",", "."))
+    except Exception:
+        return None
+
+
+def _lhm_walk(node, hw="", grp="", out=None):
+    """Recursively walk the LHM data.json sensor tree and extract metrics.
+
+    Tree structure (4 levels):
+      Root ("Sensor") > Computer > Hardware (CPU/GPU/RAM…) >
+      Sensor-group (Temperatures/Load/Data…) > Leaf sensor
+    """
+    if out is None:
+        out = {}
+
+    text = (node.get("Text") or "").strip()
+    img  = (node.get("ImageURL") or "").lower()
+    kids = node.get("Children") or []
+    tl   = text.lower()
+
+    # ── Identify hardware type from ImageURL (most reliable field) ────────────
+    if hw == "":
+        if "cpu.png" in img:
+            hw = "cpu"
+        elif "nvidia" in img:
+            hw = "gpu"
+        elif "amd.png" in img:
+            # AMD is used for both CPU and GPU chipsets; use Text to decide
+            if any(k in tl for k in ("radeon", "rx ", "vega", "navi", "rdna")):
+                hw = "gpu"
+            elif any(k in tl for k in ("ryzen", "athlon", "threadripper", "epyc")):
+                hw = "cpu"
+        elif "ram" in img or tl == "generic memory":
+            hw = "ram"
+        elif hw == "" and any(k in tl for k in ("geforce", "rtx ", "gtx ", "quadro")):
+            hw = "gpu"
+
+    # ── Identify sensor group from Text ──────────────────────────────────────
+    if tl in ("temperatures", "load", "data", "clocks", "fans", "powers", "voltages"):
+        grp = tl
+
+    # ── Leaf sensor node ──────────────────────────────────────────────────────
+    if not kids:
+        val = _lhm_val(node.get("Value"))
+        if val is None:
+            return out
+
+        if hw == "cpu":
+            if grp == "load" and "total" in tl:
+                out.setdefault("cpu_lhm_pct", val)      # CPU % (psutil is fine too)
+            elif grp == "temperatures":
+                if "package" in tl:
+                    out["cpu_temp"] = val               # Package → most accurate
+                elif "cpu_temp" not in out:
+                    out["cpu_temp"] = val               # First core temp as fallback
+
+        elif hw == "gpu":
+            if grp == "load":
+                if tl == "gpu core":
+                    out["gpu_usage"] = val              # ← matches Task Manager
+                elif "memory" in tl and "controller" not in tl:
+                    out.setdefault("vram_usage_lhm", val)
+            elif grp == "temperatures" and "core" in tl:
+                out.setdefault("gpu_temp", val)
+            elif grp == "data":
+                if "used" in tl and "memory" in tl:
+                    out["vram_used_gb"] = val
+                elif "total" in tl and "memory" in tl:
+                    out["vram_total_gb"] = val
+
+        elif hw == "ram":
+            if grp == "load" and "memory" in tl:
+                out.setdefault("memory_lhm_pct", val)
+            elif grp == "data":
+                if "used" in tl:
+                    out["memory_used_gb"] = val
+                elif "available" in tl or "free" in tl:
+                    out["memory_avail_gb"] = val
+
+        return out
+
+    # ── Recurse into children ─────────────────────────────────────────────────
+    for child in kids:
+        _lhm_walk(child, hw, grp, out)
+    return out
+
+
+def collect_from_lhm():
+    """Fetch hardware metrics from LibreHardwareMonitor's local HTTP server.
+
+    Returns a dict that is merged into _data by the dispatcher, overriding
+    nvidia-smi values with LHM ones (which match Task Manager for GPU load).
+    Falls back gracefully when LHM is not running.
+    """
+    global _lhm_ok, _lhm_retry_ts
+    now = time.time()
+
+    # After a failure, wait _LHM_RETRY_FAIL seconds before trying again
+    if _lhm_ok is False and now < _lhm_retry_ts:
+        return {}
+
+    try:
+        with urllib.request.urlopen(LHM_URL, timeout=_LHM_TIMEOUT) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+        result = _lhm_walk(raw)
+
+        # Compute VRAM % from raw GB values when available
+        vt = result.get("vram_total_gb", 0)
+        vu = result.get("vram_used_gb")
+        if vt and vu is not None:
+            result["vram_usage"] = round(vu / vt * 100, 1)
+
+        # Compute RAM total
+        mu = result.get("memory_used_gb")
+        ma = result.get("memory_avail_gb")
+        if mu is not None and ma is not None:
+            result["memory_total_gb"] = round(mu + ma, 1)
+
+        _lhm_ok = True
+        result["lhm_ok"] = True
+        return result
+
+    except Exception:
+        _lhm_ok = False
+        _lhm_retry_ts = now + _LHM_RETRY_FAIL
+        return {}
 
 
 def collect_gpu():
@@ -405,7 +550,8 @@ class DataCollector:
 
         while self._running:
             cfg = self._cfg
-            # Essential metrics only - proc/fans have rate=999 s so they never fire
+            # LHM first: its GPU Core Load overrides nvidia-smi values below
+            dispatch("lhm",  rate_for("lhm",  cfg), collect_from_lhm)
             dispatch("cpu",  rate_for("cpu",  cfg), collect_cpu)
             dispatch("ram",  rate_for("ram",  cfg), collect_ram)
             dispatch("net",  rate_for("net",  cfg), lambda: collect_net(cfg))
@@ -461,6 +607,7 @@ class DataCollector:
             ps["upload_speed"] = d.get("upload_speed", 0)
             ps["download_speed"] = d.get("download_speed", 0)
             ps["timestamp"] = d.get("timestamp", time.time())
+            ps["lhm_active"] = bool(d.get("lhm_ok", False))
             for drive, dd in di.items():
                 k = drive.lower().replace(":", "") + "_disk"
                 ps[k] = f"{dd.get('used', 0):.1f} GB/{dd.get('total', 0):.1f} GB"

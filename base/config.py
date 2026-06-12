@@ -46,7 +46,7 @@ def rate_for(key, cfg):
     cfg  = cfg or {}
     mode = cfg.get("refresh_mode", "low")
     fast = REFRESH_MODES.get(mode, RATE_CPU)
-    if key in ("cpu", "ram", "net", "gpu"):
+    if key in ("cpu", "ram", "net", "gpu", "lhm"):
         return fast
     if key == "temp":
         return RATE_TEMP
